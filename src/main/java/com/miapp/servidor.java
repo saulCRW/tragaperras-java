@@ -1,6 +1,7 @@
 package com.miapp;
 
 import com.formdev.flatlaf.FlatDarkLaf;
+
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
@@ -11,10 +12,13 @@ import java.util.List;
 
 public class servidor extends JFrame {
     private static final int MAX_CLIENTES = 3;
+    private final String[] SIMBOLOS = {
+            "banana", "cherries", "dollar", "lemon", "orange", "potato", "tomato"
+    };
+
     private ServerSocket serverSocket;
-    private final Map<Integer, Socket> clientes = new HashMap<>();
     private final Map<Integer, PrintWriter> salidas = new HashMap<>();
-    private final Map<Integer, String> resultados = new HashMap<>();
+    private final Map<Integer, Socket> clientes = new HashMap<>();
 
     private boolean juegoEnCurso = false;
     private int creditos = 5;
@@ -42,16 +46,15 @@ public class servidor extends JFrame {
 
     private void inicializarComponentes() {
         panelPrincipal = new JPanel(new BorderLayout());
-
         panelControles = new JPanel(new BorderLayout());
-        panelControles.setBorder(BorderFactory.createLineBorder(Color.GRAY, 2));
-
         panelEstado = new JPanel(new BorderLayout());
+        panelStatus = new JPanel(new BorderLayout());
+        panelInferior = new JPanel(new FlowLayout());
+
         lblEstado = new JLabel("Esperando conexiones...");
         lblCreditos = new JLabel("Créditos: " + creditos);
         lblCreditos.setHorizontalAlignment(SwingConstants.RIGHT);
 
-        panelStatus = new JPanel(new BorderLayout());
         lblStatus = new JLabel("Esperando acción...");
         lblStatus.setHorizontalAlignment(SwingConstants.CENTER);
 
@@ -59,7 +62,6 @@ public class servidor extends JFrame {
         cambiarImagenPalanca(0);
         lblControles.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
-        panelInferior = new JPanel(new FlowLayout());
         cmbApuesta = new JComboBox<>(APUESTAS);
         btnInsertarCredito = new JButton("Insertar crédito");
     }
@@ -91,11 +93,10 @@ public class servidor extends JFrame {
                     if (creditos >= apuestaActual) {
                         creditos -= apuestaActual;
                         actualizarCreditos();
-                        bajarPalanca();
+                        cambiarImagenPalanca(1);
                         juegoEnCurso = true;
-                        resultados.clear();
                         lblStatus.setText("Jugando con apuesta de " + apuestaActual + " créditos...");
-                        salidas.values().forEach(out -> out.println("INICIAR_JUEGO"));
+                        enviarResultadosAleatorios();
                     } else {
                         lblStatus.setText("⚠️ Créditos insuficientes para esa apuesta.");
                     }
@@ -110,21 +111,13 @@ public class servidor extends JFrame {
         });
     }
 
-    private void bajarPalanca() {
-        cambiarImagenPalanca(1);
-    }
-
-    private void subirPalanca() {
-        cambiarImagenPalanca(0);
-    }
-
     private void cambiarImagenPalanca(int indice) {
-        String nombreArchivo = ESTADOSPALANCA[indice] + ".png";
-        URL url = getClass().getResource("/assets/" + nombreArchivo);
+        String archivo = ESTADOSPALANCA[indice] + ".png";
+        URL url = getClass().getResource("/assets/" + archivo);
         if (url != null) {
             lblControles.setIcon(new ImageIcon(url));
         } else {
-            System.out.println("❌ Imagen no encontrada: " + nombreArchivo);
+            System.out.println("❌ Imagen no encontrada: " + archivo);
         }
     }
 
@@ -136,61 +129,67 @@ public class servidor extends JFrame {
         new Thread(() -> {
             try {
                 serverSocket = new ServerSocket(5000);
-                int contadorClientes = 0;
-
-                while (contadorClientes < MAX_CLIENTES) {
+                int id = 1;
+                while (id <= MAX_CLIENTES) {
                     Socket socket = serverSocket.accept();
-                    int idRodillo = contadorClientes + 1;
-                    clientes.put(idRodillo, socket);
                     PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-                    salidas.put(idRodillo, out);
-                    int finalIdRodillo = idRodillo;
-
-                    new Thread(() -> manejarCliente(socket, finalIdRodillo)).start();
-                    contadorClientes++;
-                    lblEstado.setText("Clientes conectados: " + contadorClientes + "/" + MAX_CLIENTES);
+                    clientes.put(id, socket);
+                    salidas.put(id, out);
+                    int currentId = id;
+                    new Thread(() -> escucharCliente(socket, currentId)).start();
+                    lblEstado.setText("Conectado: " + clientes.size() + "/" + MAX_CLIENTES);
+                    id++;
                 }
-
             } catch (IOException e) {
-                lblEstado.setText("❌ Error al iniciar servidor.");
                 e.printStackTrace();
+                lblEstado.setText("❌ Error en el servidor");
             }
         }).start();
     }
 
-    private void manejarCliente(Socket socket, int idRodillo) {
+    private void escucharCliente(Socket socket, int id) {
         try (BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
             while (true) {
-                String mensaje = in.readLine();
-                if (mensaje != null && mensaje.startsWith("RESULTADO:")) {
-                    String simbolo = mensaje.split(":")[1];
-                    resultados.put(idRodillo, simbolo);
-                    System.out.println("Rodillo " + idRodillo + ": " + simbolo);
-
-                    if (resultados.size() == MAX_CLIENTES) {
-                        SwingUtilities.invokeLater(this::evaluarResultado);
-                    }
-                }
+                in.readLine();
             }
         } catch (IOException e) {
-            System.out.println("❌ Cliente desconectado: rodillo " + idRodillo);
+            System.out.println("❌ Cliente " + id + " desconectado");
         }
     }
 
-    private void evaluarResultado() {
-        juegoEnCurso = false;
-        subirPalanca();
+    private void enviarResultadosAleatorios() {
+        Random random = new Random();
+        List<String> resultados = new ArrayList<>();
 
-        List<String> simbolos = new ArrayList<>(resultados.values());
-        int ganancia = calcularGanancia(simbolos);
-        creditos += ganancia;
+        for (int i = 1; i <= MAX_CLIENTES; i++) {
+            String simbolo = SIMBOLOS[random.nextInt(SIMBOLOS.length)];
+            resultados.add(simbolo);
+        }
+
+        int ganancia = calcularGanancia(resultados);
+        if (ganancia > 0) {
+            creditos += ganancia;
+            lblStatus.setText("🎉 Ganaste " + ganancia + " créditos!");
+        } else {
+            lblStatus.setText("😢 No ganaste esta vez.");
+        }
         actualizarCreditos();
 
-        if (ganancia > 0) {
-            lblStatus.setText("🎉 Ganaste " + ganancia + " créditos con: " + simbolos);
-        } else {
-            lblStatus.setText("😢 No ganaste. Resultado: " + simbolos);
+        String estado = ganancia > 0 ? "Ganaste" : "Perdiste";
+        for (int i = 1; i <= MAX_CLIENTES; i++) {
+            String simbolo = resultados.get(i - 1);
+            if (salidas.get(i) != null) {
+                salidas.get(i).println("RESULTADO:" + simbolo + ":" + estado);
+            }
         }
+
+        javax.swing.Timer finalizarJuego = new javax.swing.Timer(6000, e -> {
+            juegoEnCurso = false;
+            cambiarImagenPalanca(0);
+            lblStatus.setText("Juego finalizado.");
+        });
+        finalizarJuego.setRepeats(false);
+        finalizarJuego.start();
     }
 
     private int calcularGanancia(List<String> simbolos) {
@@ -198,7 +197,6 @@ public class servidor extends JFrame {
         for (String s : simbolos) {
             conteo.put(s, conteo.getOrDefault(s, 0) + 1);
         }
-
         if (conteo.containsValue(3)) return apuestaActual * 5;
         if (conteo.containsValue(2)) return apuestaActual * 2;
         return 0;
