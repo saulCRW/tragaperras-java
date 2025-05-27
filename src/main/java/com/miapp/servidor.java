@@ -9,6 +9,8 @@ import java.io.*;
 import java.net.*;
 import java.util.*;
 import java.util.List;
+import java.util.ArrayList;
+
 
 public class servidor extends JFrame {
     private static final int MAX_CLIENTES = 3;
@@ -150,7 +152,7 @@ public class servidor extends JFrame {
     private void escucharCliente(Socket socket, int id) {
         try (BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
             while (true) {
-                in.readLine();
+                in.readLine(); // lectura pasiva
             }
         } catch (IOException e) {
             System.out.println("❌ Cliente " + id + " desconectado");
@@ -158,38 +160,52 @@ public class servidor extends JFrame {
     }
 
     private void enviarResultadosAleatorios() {
-        Random random = new Random();
-        List<String> resultados = new ArrayList<>();
-
+        // Enviar señal de inicio
         for (int i = 1; i <= MAX_CLIENTES; i++) {
-            String simbolo = SIMBOLOS[random.nextInt(SIMBOLOS.length)];
-            resultados.add(simbolo);
-        }
-
-        int ganancia = calcularGanancia(resultados);
-        if (ganancia > 0) {
-            creditos += ganancia;
-            lblStatus.setText("🎉 Ganaste " + ganancia + " créditos!");
-        } else {
-            lblStatus.setText("😢 No ganaste esta vez.");
-        }
-        actualizarCreditos();
-
-        String estado = ganancia > 0 ? "Ganaste" : "Perdiste";
-        for (int i = 1; i <= MAX_CLIENTES; i++) {
-            String simbolo = resultados.get(i - 1);
             if (salidas.get(i) != null) {
-                salidas.get(i).println("RESULTADO:" + simbolo + ":" + estado);
+                salidas.get(i).println("GIRAR");
             }
         }
 
-        javax.swing.Timer finalizarJuego = new javax.swing.Timer(6000, e -> {
-            juegoEnCurso = false;
-            cambiarImagenPalanca(0);
-            lblStatus.setText("Juego finalizado.");
-        });
-        finalizarJuego.setRepeats(false);
-        finalizarJuego.start();
+        new Thread(() -> {
+            try {
+                Thread.sleep(3000); // espera de giro
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+
+            Random random = new Random();
+            List<String> resultados = new ArrayList<>();
+            for (int i = 1; i <= MAX_CLIENTES; i++) {
+                String simbolo = SIMBOLOS[random.nextInt(SIMBOLOS.length)];
+                resultados.add(simbolo);
+            }
+
+            int ganancia = calcularGanancia(resultados);
+            String mensajeFinal;
+
+            if (ganancia > 0) {
+                creditos += ganancia;
+                mensajeFinal = "🎉 Ganaste " + ganancia + " créditos.\n✅ Juego finalizado.";
+            } else {
+                mensajeFinal = "😢 Perdiste esta vez.\n✅ Juego finalizado.";
+            }
+            actualizarCreditos();
+
+            String estado = ganancia > 0 ? "Ganaste" : "Perdiste";
+            for (int i = 1; i <= MAX_CLIENTES; i++) {
+                String simbolo = resultados.get(i - 1);
+                if (salidas.get(i) != null) {
+                    salidas.get(i).println("RESULTADO:" + simbolo + ":" + estado);
+                }
+            }
+
+            SwingUtilities.invokeLater(() -> {
+                juegoEnCurso = false;
+                cambiarImagenPalanca(0);
+                lblStatus.setText("<html>" + mensajeFinal.replace("\n", "<br>") + "</html>");
+            });
+        }).start();
     }
 
     private int calcularGanancia(List<String> simbolos) {

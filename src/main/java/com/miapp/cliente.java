@@ -13,8 +13,8 @@ public class cliente extends JFrame {
             "banana", "cherries", "dollar", "lemon", "orange", "potato", "tomato"
     };
 
-    private JLabel lblImagen, lblEstado;
-    private JPanel panelPrincipal, panelImagen, panelEstado;
+    private JLabel lblImagen;
+    private JPanel panelPrincipal, panelImagen;
 
     private Socket socket;
     private BufferedReader in;
@@ -30,8 +30,9 @@ public class cliente extends JFrame {
 
         inicializarComponentes();
         configurarLayout();
-        iniciarAnimacionGiro();
+        mostrarSimbolo(SIMBOLOS[0]); // símbolo inicial estático
         conectarAlServidor();
+        prepararAnimacion();
     }
 
     private void inicializarComponentes() {
@@ -41,28 +42,19 @@ public class cliente extends JFrame {
         panelImagen.setBorder(BorderFactory.createLineBorder(Color.GRAY, 2));
         lblImagen = new JLabel();
         lblImagen.setHorizontalAlignment(SwingConstants.CENTER);
-
-        panelEstado = new JPanel(new BorderLayout());
-        lblEstado = new JLabel("Conectando al servidor...");
-        lblEstado.setHorizontalAlignment(SwingConstants.CENTER);
     }
 
     private void configurarLayout() {
         panelImagen.add(lblImagen);
-        panelEstado.add(lblEstado, BorderLayout.CENTER);
-
         panelPrincipal.add(panelImagen, BorderLayout.CENTER);
-        panelPrincipal.add(panelEstado, BorderLayout.SOUTH);
-
         add(panelPrincipal);
     }
 
-    private void iniciarAnimacionGiro() {
+    private void prepararAnimacion() {
         animacionTimer = new Timer(100, e -> {
             mostrarSimbolo(SIMBOLOS[indiceActual]);
             indiceActual = (indiceActual + 1) % SIMBOLOS.length;
         });
-        animacionTimer.start();
     }
 
     private void mostrarSimbolo(String simbolo) {
@@ -75,38 +67,34 @@ public class cliente extends JFrame {
         }
     }
 
-    private void mostrarResultadoFinal(String simboloFinal, String estadoJuego) {
+    private void mostrarResultadoFinal(String simboloFinal) {
         animacionTimer.stop();
         mostrarSimbolo(simboloFinal);
-        lblEstado.setText("Resultado: " + simboloFinal + " | " + estadoJuego);
-
-        // Mantener el símbolo visible por 5 segundos
-        Timer retomar = new Timer(5000, e -> animacionTimer.start());
-        retomar.setRepeats(false);
-        retomar.start();
+        // Nada de textos
     }
 
     private void conectarAlServidor() {
         new Thread(() -> {
             try {
-                socket = new Socket("192.168.0.12", 5000); // Cambia IP a la del servidor real
+                socket = new Socket("192.168.1.65", 5000); // Cambia esta IP por la del servidor real
                 in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-
-                SwingUtilities.invokeLater(() -> lblEstado.setText("Conectado al servidor"));
 
                 while (true) {
                     String mensaje = in.readLine();
-                    if (mensaje != null && mensaje.startsWith("RESULTADO:")) {
+                    if (mensaje == null) continue;
+
+                    if (mensaje.equals("GIRAR")) {
+                        SwingUtilities.invokeLater(() -> animacionTimer.start());
+                    } else if (mensaje.startsWith("RESULTADO:")) {
                         String[] partes = mensaje.split(":");
-                        if (partes.length >= 3) {
+                        if (partes.length >= 2) {
                             String simbolo = partes[1];
-                            String estado = partes[2];
-                            SwingUtilities.invokeLater(() -> mostrarResultadoFinal(simbolo, estado));
+                            SwingUtilities.invokeLater(() -> mostrarResultadoFinal(simbolo));
                         }
                     }
                 }
             } catch (IOException e) {
-                SwingUtilities.invokeLater(() -> lblEstado.setText("❌ Error de conexión"));
+                System.out.println("❌ Error de conexión con el servidor");
                 e.printStackTrace();
             }
         }).start();
